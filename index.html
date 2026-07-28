@@ -84,7 +84,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v10 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v11 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -233,7 +233,7 @@ async function pump(){
   let e=0; for(let i=0;i<job.samples.length;i+=64)e+=Math.abs(job.samples[i]);
   const avg=e/(job.samples.length/64);
   if(avg>0.0012){
-    try{ const out=await transcriber(job.samples,{language:"en",task:"transcribe"});
+    try{ const out=await transcriber(job.samples);
       const txt=(out.text||"").trim();
       log(job.who+" heard: "+(txt||"(nothing)"));
       if(txt && !/^(\[.*\]|\(.*\)|you|thanks for watching.*|thank you\.?|bye\.?)$/i.test(txt)) addLine(job.who,txt);
