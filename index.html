@@ -84,7 +84,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v11 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v12 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -110,11 +110,6 @@
             <option value="claude-sonnet-4-6">claude-sonnet-4-6 (recommended)</option>
             <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (fastest)</option>
             <option value="claude-sonnet-5">claude-sonnet-5</option>
-          </select></label>
-        <label class="field"><span>Transcription quality</span>
-          <select id="whisperModel">
-            <option value="onnx-community/whisper-tiny.en">Fast (tiny)</option>
-            <option value="onnx-community/whisper-base.en">Better (base, slower to load)</option>
           </select></label>
       </div>
       <label class="field"><span>Microphone</span>
@@ -166,12 +161,12 @@ function log(m){ const t=new Date().toLocaleTimeString([], {hour12:false}); logE
 const store = {
   load(){ try{ const c=JSON.parse(localStorage.getItem("callcoach")||"{}");
     if(c.apiKey)$("apiKey").value=c.apiKey; if(c.model)$("model").value=c.model;
-    if(c.whisperModel)$("whisperModel").value=c.whisperModel; if(c.objectives)$("objectives").value=c.objectives;
+    if(c.objectives)$("objectives").value=c.objectives;
     if(typeof c.custOn==="boolean")$("custOn").checked=c.custOn; if(typeof c.localOnly==="boolean")$("localOnly").checked=c.localOnly;
     if(Array.isArray(c.watch))document.querySelectorAll('#watch input').forEach(i=>i.checked=c.watch.includes(i.value));
   }catch(e){} },
   save(){ localStorage.setItem("callcoach", JSON.stringify({
-    apiKey:$("apiKey").value.trim(), model:$("model").value, whisperModel:$("whisperModel").value,
+    apiKey:$("apiKey").value.trim(), model:$("model").value,
     objectives:$("objectives").value, custOn:$("custOn").checked, localOnly:$("localOnly").checked,
     watch:[...document.querySelectorAll('#watch input:checked')].map(i=>i.value) })); }
 };
@@ -217,7 +212,7 @@ function addNudge(type,msg){
 async function loadWhisper(){
   if(transcriber)return transcriber;
   if(whisperLoading)return whisperLoading;
-  const model=$("whisperModel").value;
+  const model="onnx-community/whisper-base.en";
   const prog={};
   const cb=p=>{ if(p&&p.status==="progress"&&p.file){ const pct=Math.round(p.progress||0); if(prog[p.file]!==pct && pct%10===0){ prog[p.file]=pct; log("downloading "+p.file.split("/").pop()+" "+pct+"%"); } } };
   whisperLoading=(async()=>{
@@ -283,7 +278,8 @@ async function startMic(){
   const base={echoCancellation:true,noiseSuppression:true,autoGainControl:true};
   let id=null; try{ id=await resolveMicId(); }catch(e){}
   try{ micStream=await navigator.mediaDevices.getUserMedia(id?{audio:Object.assign({deviceId:{exact:id}},base)}:{audio:base}); }
-  catch(e){ setStatus("Microphone blocked. Enable Google Chrome in macOS System Settings > Privacy & Security > Microphone, then quit and reopen Chrome."); return false; }
+  catch(e){ try{ micStream=await navigator.mediaDevices.getUserMedia({audio:base}); log("fell back to system input"); }
+    catch(e2){ setStatus("Microphone blocked. Enable Google Chrome in macOS System Settings > Privacy & Security > Microphone, then quit and reopen Chrome."); return false; } }
   await refreshDevices();
   const lbl=((micStream.getAudioTracks()[0]||{}).label)||"unknown"; log("mic device: "+lbl);
   if(isVirtual(lbl)) log("WARNING: that looks like a virtual device. Pick your real mic in the dropdown.");
@@ -398,7 +394,12 @@ testBtn.onclick=()=>start(true);
 stopBtn.onclick=()=>{ stop(); setStatus("Stopped."); };
 nudgeBtn.onclick=()=>runCoach(true);
 $("micCheck").onclick=micCheck;
-refreshDevices();
+async function initMic(){
+  try{ const s0=await navigator.mediaDevices.getUserMedia({audio:true}); s0.getTracks().forEach(t=>t.stop()); }catch(e){ await refreshDevices(); return; }
+  await refreshDevices();
+  try{ const id=await resolveMicId(); if(id){ $("micDevice").value=id; store.save(); } }catch(e){}
+}
+initMic();
 navigator.mediaDevices.addEventListener("devicechange", refreshDevices);
 window.addEventListener("beforeunload",()=>{ if(running)stop(); });
 </script>
