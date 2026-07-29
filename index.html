@@ -85,7 +85,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v18 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v19 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -99,6 +99,7 @@
     <button class="btn" id="nudgeBtn" disabled>Nudge now</button>
   </div>
   <div id="status">Fill in setup below, then press Start call.</div>
+  <div id="calBanner" style="display:none; margin:12px 0 0; padding:11px 14px; border:1px solid var(--accent); background:#eafaf4; border-radius:10px; font-size:14px;"></div>
   <pre id="log" style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-family:var(--mono);font-size:11px;color:var(--muted);max-height:150px;overflow:auto;margin:14px 0 0;white-space:pre-wrap;"></pre>
   <section class="card" id="setup" style="margin-bottom:20px;border:2px solid var(--accent);">
     <h2 style="color:var(--accent);font-size:16px;">Setup (fill this in)</h2>
@@ -139,9 +140,10 @@
         <label class="chk" style="border:none;background:none;padding:0;"><input type="checkbox" id="custOn" checked /> Transcribe the customer (needs tab share)</label>
         <label class="chk" style="border:none;background:none;padding:0;"><input type="checkbox" id="localOnly" /> Local only, no AI nudges (for restricted calls)</label>
         <label class="chk" style="border:none;background:none;padding:0;"><input type="checkbox" id="suggestOn" checked /> Suggest questions and comments to add value</label>
+        <label class="chk" style="border:none;background:none;padding:0;"><input type="checkbox" id="calSync" checked /> Auto fill context from Google Calendar</label>
       </div>
       <div class="row">
-        <label class="field"><span>Auto save notes to Google Drive: Web App URL (optional)</span>
+        <label class="field"><span>Google Apps Script Web App URL (powers Drive save + Calendar)</span>
           <input type="text" id="driveUrl" placeholder="https://script.google.com/macros/s/..../exec" /></label>
         <label class="field"><span>Drive folder name</span>
           <input type="text" id="driveFolder" placeholder="Call Coach Notes" /></label>
@@ -177,12 +179,12 @@ const store = {
     if(c.apiKey)$("apiKey").value=c.apiKey; if(c.model)$("model").value=c.model;
     if(c.objectives)$("objectives").value=c.objectives; if(c.attendees)$("attendees").value=c.attendees;
     if(c.driveUrl)$("driveUrl").value=c.driveUrl; if(c.driveFolder)$("driveFolder").value=c.driveFolder;
-    if(typeof c.custOn==="boolean")$("custOn").checked=c.custOn; if(typeof c.localOnly==="boolean")$("localOnly").checked=c.localOnly; if(typeof c.suggestOn==="boolean")$("suggestOn").checked=c.suggestOn;
+    if(typeof c.custOn==="boolean")$("custOn").checked=c.custOn; if(typeof c.localOnly==="boolean")$("localOnly").checked=c.localOnly; if(typeof c.suggestOn==="boolean")$("suggestOn").checked=c.suggestOn; if(typeof c.calSync==="boolean")$("calSync").checked=c.calSync;
     if(Array.isArray(c.watch))document.querySelectorAll('#watch input').forEach(i=>i.checked=c.watch.includes(i.value));
   }catch(e){} },
   save(){ localStorage.setItem("callcoach", JSON.stringify({
     apiKey:$("apiKey").value.trim(), model:$("model").value,
-    objectives:$("objectives").value, attendees:$("attendees").value, driveUrl:$("driveUrl").value.trim(), driveFolder:$("driveFolder").value.trim(), custOn:$("custOn").checked, localOnly:$("localOnly").checked, suggestOn:$("suggestOn").checked,
+    objectives:$("objectives").value, attendees:$("attendees").value, driveUrl:$("driveUrl").value.trim(), driveFolder:$("driveFolder").value.trim(), custOn:$("custOn").checked, localOnly:$("localOnly").checked, suggestOn:$("suggestOn").checked, calSync:$("calSync").checked,
     watch:[...document.querySelectorAll('#watch input:checked')].map(i=>i.value) })); }
 };
 store.load();
@@ -426,6 +428,43 @@ function stop(){
   startBtn.disabled=false; testBtn.disabled=false; stopBtn.disabled=true; nudgeBtn.disabled=true;
 }
 
+let lastCalId="";
+function jsonp(url){ return new Promise((res,rej)=>{ const cb="cc_cb_"+Date.now()+"_"+Math.floor(Math.random()*1e4); const sc=document.createElement("script");
+  window[cb]=d=>{ res(d); try{delete window[cb];}catch(e){} sc.remove(); };
+  sc.onerror=()=>{ rej(new Error("jsonp error")); try{delete window[cb];}catch(e){} sc.remove(); };
+  sc.src=url+(url.includes("?")?"&":"?")+"callback="+cb;
+  document.body.appendChild(sc);
+  setTimeout(()=>{ if(window[cb]){ try{delete window[cb];}catch(e){} sc.remove(); rej(new Error("jsonp timeout")); } },10000);
+}); }
+function showCalBanner(ev){
+  const b=$("calBanner");
+  if(!ev||!ev.title){ b.style.display="none"; return; }
+  b.style.display="block"; b.textContent="";
+  const strong=document.createElement("b"); strong.textContent=ev.title;
+  if(running) b.append("Recording ", strong);
+  else b.append("You are in ", strong, ". Press Start call to coach it.");
+}
+function maybeNotify(title){ try{ if(window.Notification && Notification.permission==="granted") new Notification("Call Coach", {body:(title||"A meeting")+" is on. Open Call Coach and press Start."}); }catch(e){} }
+async function pollCalendar(){
+  if(!$("calSync").checked){ showCalBanner(null); return; }
+  const url=$("driveUrl").value.trim(); if(!url) return;
+  try{
+    const d=await jsonp(url+(url.includes("?")?"&":"?")+"action=now");
+    if(d && d.ok && d.event){
+      const ev=d.event; showCalBanner(ev);
+      if(ev.id!==lastCalId){
+        lastCalId=ev.id;
+        if(!running){
+          const ctx=(ev.title||"")+(ev.description?(". "+ev.description.replace(/\s+/g," ").trim()):"");
+          $("objectives").value=ctx.slice(0,400);
+          if(ev.attendees) $("attendees").value=ev.attendees;
+          store.save();
+        }
+        maybeNotify(ev.title);
+      }
+    } else { showCalBanner(null); }
+  }catch(e){}
+}
 startBtn.onclick=()=>start(false);
 testBtn.onclick=()=>start(true);
 stopBtn.onclick=async ()=>{ const had=transcript.length; stop(); setStatus("Call ended."); if(had){ await generateNotes(); await saveToDrive(buildMarkdown(lastNotes)); } };
@@ -497,6 +536,8 @@ async function initMic(){
 }
 initMic();
 navigator.mediaDevices.addEventListener("devicechange", refreshAndSelect);
+try{ if(window.Notification && Notification.permission==="default") Notification.requestPermission(); }catch(e){}
+pollCalendar(); setInterval(pollCalendar, 60000);
 window.addEventListener("beforeunload",()=>{ if(running)stop(); });
 </script>
 </body>
