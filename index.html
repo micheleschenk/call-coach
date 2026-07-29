@@ -11,7 +11,7 @@
   :root {
     --bg: #f7f9fc; --panel: #ffffff; --panel2: #eef3fb; --line: #e2e9f2;
     --text: #21313e; --muted: #6b7c8c; --accent: #0bb789; --customer: #ff7a3c;
-    --risk: #ef4d5a; --commit: #f5a524; --action: #0bb789; --steps: #2f8fe6; --general: #8b5cf6;
+    --risk: #ef4d5a; --commit: #f5a524; --action: #0bb789; --steps: #2f8fe6; --general: #8b5cf6; --suggest: #0ea5b7;
     --display: "Space Grotesk", system-ui, sans-serif; --body: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
   }
   * { box-sizing: border-box; }
@@ -70,6 +70,7 @@
   .nudge.commitment { border-left-color: var(--commit); } .nudge.commitment .tag { color: var(--commit); }
   .nudge.action { border-left-color: var(--action); } .nudge.action .tag { color: var(--action); }
   .nudge.nextsteps { border-left-color: var(--steps); } .nudge.nextsteps .tag { color: var(--steps); }
+  .nudge.suggest { border-left-color: var(--suggest); } .nudge.suggest .tag { color: var(--suggest); }
   #transcript { max-height: 420px; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
   .line { font-size: 14px; line-height: 1.5; }
   .line .who { font-family: var(--mono); font-size: 11px; margin-right: 8px; }
@@ -84,7 +85,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v15 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v16 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -137,6 +138,7 @@
       <div class="toggles">
         <label class="chk" style="border:none;background:none;padding:0;"><input type="checkbox" id="custOn" checked /> Transcribe the customer (needs tab share)</label>
         <label class="chk" style="border:none;background:none;padding:0;"><input type="checkbox" id="localOnly" /> Local only, no AI nudges (for restricted calls)</label>
+        <label class="chk" style="border:none;background:none;padding:0;"><input type="checkbox" id="suggestOn" checked /> Suggest questions and comments to add value</label>
       </div>
       <div class="row">
         <label class="field"><span>Auto save notes to Google Drive: Web App URL (optional)</span>
@@ -175,12 +177,12 @@ const store = {
     if(c.apiKey)$("apiKey").value=c.apiKey; if(c.model)$("model").value=c.model;
     if(c.objectives)$("objectives").value=c.objectives; if(c.attendees)$("attendees").value=c.attendees;
     if(c.driveUrl)$("driveUrl").value=c.driveUrl; if(c.driveFolder)$("driveFolder").value=c.driveFolder;
-    if(typeof c.custOn==="boolean")$("custOn").checked=c.custOn; if(typeof c.localOnly==="boolean")$("localOnly").checked=c.localOnly;
+    if(typeof c.custOn==="boolean")$("custOn").checked=c.custOn; if(typeof c.localOnly==="boolean")$("localOnly").checked=c.localOnly; if(typeof c.suggestOn==="boolean")$("suggestOn").checked=c.suggestOn;
     if(Array.isArray(c.watch))document.querySelectorAll('#watch input').forEach(i=>i.checked=c.watch.includes(i.value));
   }catch(e){} },
   save(){ localStorage.setItem("callcoach", JSON.stringify({
     apiKey:$("apiKey").value.trim(), model:$("model").value,
-    objectives:$("objectives").value, attendees:$("attendees").value, driveUrl:$("driveUrl").value.trim(), driveFolder:$("driveFolder").value.trim(), custOn:$("custOn").checked, localOnly:$("localOnly").checked,
+    objectives:$("objectives").value, attendees:$("attendees").value, driveUrl:$("driveUrl").value.trim(), driveFolder:$("driveFolder").value.trim(), custOn:$("custOn").checked, localOnly:$("localOnly").checked, suggestOn:$("suggestOn").checked,
     watch:[...document.querySelectorAll('#watch input:checked')].map(i=>i.value) })); }
 };
 store.load();
@@ -216,7 +218,7 @@ function addNudge(type,msg){
   if(shownNudges.includes(key))return; shownNudges.push(key); if(shownNudges.length>12)shownNudges.shift();
   if(nudgesEl.querySelector(".empty"))nudgesEl.innerHTML="";
   const div=document.createElement("div");
-  const t=["risk","commitment","action","nextsteps"].includes(type)?type:"general";
+  const t=["risk","commitment","action","nextsteps","suggest"].includes(type)?type:"general";
   div.className="nudge "+t;
   div.innerHTML='<div class="tag"></div><div class="msg"></div><div class="time"></div>';
   div.querySelector(".tag").textContent=type; div.querySelector(".msg").textContent=msg; div.querySelector(".time").textContent=timeNow();
@@ -361,7 +363,10 @@ function buildSystemPrompt(){
     nextsteps:"the call approaching a close with no agreed next steps or follow-up" };
   const watching=watch.map(w=>"- "+map[w]).join("\n");
   const who=$("attendees").value.trim();
-  return 'You are a quiet live coach for a technical project manager (PM) at a robotics company on a customer call. Transcript lines are labelled "You" (the PM) and "Customer" (everyone on the other side).\n\nCall context from the PM:\n'+($("objectives").value.trim()||"(none given)")+(who?('\nPeople on the call: '+who):'')+'\n\nWatch specifically for:\n'+(watching||"- anything the PM should act on")+'\n\nHard rules (follow strictly):\n- Default to silence. Most checks should return []. Only interrupt when it clearly helps.\n- BEFORE nudging that an action item lacks an owner or a date, re-read the transcript. If an owner or date was already stated anywhere, do NOT nudge. Never nudge about something already resolved in the conversation.\n- Do not restate what was just agreed. Do not nudge about things already handled.\n- Never repeat or rephrase a nudge you already gave earlier in this call.\n- At most 1 nudge per check, under 14 words, phrased as a direct prompt to the PM.\n- Only raise a risk/commitment/nextsteps nudge if it is genuinely unaddressed and time-sensitive.\n- Respond with ONLY a JSON array, no prose, no code fences. Each item: {"type": "risk"|"commitment"|"action"|"nextsteps"|"general", "text": "..."}.\n- If nothing is clearly worth saying, respond with [].';
+  const suggestOn=$("suggestOn").checked;
+  const suggestBlock=suggestOn ? '\n\nProactive coaching: when there is a clear opening, also offer ONE high-value move the PM could make right now \u2014 a sharp question to ask, a clarifying question, or a comment that surfaces a hidden risk, deepens discovery, or adds expertise. Use type "suggest" and phrase it as the exact words the PM could say, for example: "Ask: what breaks if the vendor slips two weeks?" Keep it under 16 words. Only when it genuinely adds value; never filler to fill silence.' : '';
+  const cap=suggestOn ? '- Return at most 2 items per check: at most one watchdog nudge AND at most one "suggest". Fewer is better.' : '- At most 1 nudge per check, under 14 words, phrased as a direct prompt to the PM.';
+  return 'You are a live coach for a technical project manager (PM) at a robotics company on a customer call. Transcript lines are labelled "You" (the PM) and "Customer" (everyone on the other side).\n\nCall context from the PM:\n'+($("objectives").value.trim()||"(none given)")+(who?('\nPeople on the call: '+who):'')+'\n\nWatch specifically for:\n'+(watching||"- anything the PM should act on")+suggestBlock+'\n\nHard rules (follow strictly):\n- Default to restraint. Silence is fine; do not feel obliged to speak every check.\n- BEFORE nudging that an action item lacks an owner or a date, re-read the transcript. If an owner or date was already stated anywhere, do NOT nudge. Never nudge about something already resolved.\n- Do not restate what was just agreed. Never repeat or rephrase anything you already said earlier in this call.\n'+cap+'\n- Respond with ONLY a JSON array, no prose, no code fences. Each item: {"type": "risk"|"commitment"|"action"|"nextsteps"|"suggest"|"general", "text": "..."}.\n- If nothing is clearly worth saying, respond with [].';
 }
 
 async function runCoach(manual=false){
@@ -382,7 +387,7 @@ async function runCoach(manual=false){
     let txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
     txt=txt.replace(/^```json/i,"").replace(/```$/,"").trim();
     let arr=[]; try{ arr=JSON.parse(txt); }catch(e){ arr=[]; }
-    (Array.isArray(arr)?arr:[]).slice(0,1).forEach(n=>{ if(n&&n.text)addNudge(n.type||"general",n.text); });
+    (Array.isArray(arr)?arr:[]).slice(0,2).forEach(n=>{ if(n&&n.text)addNudge(n.type||"general",n.text); });
   }catch(e){ setStatus("Coach could not reach the API. Check your network, then press Nudge now."); }
   setPill(pillCoach,false);
 }
@@ -399,7 +404,7 @@ async function start(isTest=false){
   setStatus("Model ready. Allow the microphone when Chrome asks...");
   const micOk=await startMic(); log("mic "+(micOk?"on":"FAILED"));
   if($("custOn").checked){ const cOk=await startCustomer(); log("customer "+(cOk?"on":"off")); }
-  coachTimer=setInterval(()=>runCoach(false),30000);
+  coachTimer=setInterval(()=>runCoach(false),25000);
   if(isTest){
     setStatus("Test running for 20 seconds: talk out loud, and keep the shared video playing...");
     testTimeout=setTimeout(()=>{
