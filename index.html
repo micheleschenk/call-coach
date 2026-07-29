@@ -85,7 +85,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v16 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v17 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -472,7 +472,7 @@ async function generateNotes(){
   }
   $("summary").textContent="Writing your notes...";
   const who=$("attendees").value.trim();
-  const sys='You write concise, accurate post-call notes for a technical project manager. Use ONLY what is in the transcript; never invent. '+(who?('People on the call: '+who+'. Attribute decisions and action items to the right person by name when the transcript makes it clear; otherwise say "Customer" or "You". '):'')+'Output GitHub markdown with these sections in order: ## Summary (3 to 5 sentences), ## Decisions, ## Action items (one per line as "- [owner or TBD] task \u2014 due [date or TBD]", only include a date or owner if actually stated), ## Risks / RICDA, ## Open questions, ## Next steps. Keep it tight. If a section has nothing, write "- none".';
+  const sys='You write concise, accurate post-call notes for a technical project manager. Use ONLY what is in the transcript; never invent. '+(who?('People on the call: '+who+'. Attribute decisions and action items to the right person by name when the transcript makes it clear; otherwise say "Customer" or "You". '):'')+'Output GitHub markdown with these sections in order: ## Summary (3 to 5 sentences), ## Decisions, ## Action items (one per line as "- [owner or TBD] task \u2014 due [date or TBD]", only include a date or owner if actually stated), ## Risks / RICDA, ## Open questions, ## Next steps, and finally ## Recommendations for similar calls (forward-looking coaching for the PM: what to prepare in advance, sharp questions to ask up front, pitfalls or missed openings from this call to avoid next time, and what tends to move calls like this forward). Base recommendations only on how THIS call actually went. Keep it tight. If a section has nothing, write "- none".';
   try{
     const res=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
       headers:{ "content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
