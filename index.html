@@ -84,7 +84,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v14 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v15 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -287,9 +287,16 @@ async function resolveMicId(){
   if(ins.length && !ins[0].label){ try{ const t=await navigator.mediaDevices.getUserMedia({audio:true}); t.getTracks().forEach(x=>x.stop()); }catch(e){}
     ins=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="audioinput"); }
   const real=ins.filter(d=>!isVirtual(d.label));
-  const builtin=real.find(d=>/built-in|macbook|internal/i.test(d.label));
-  const best=builtin||real[0]||ins[0];
-  return best?best.deviceId:null;
+  const pref=real.find(d=>/emeet/i.test(d.label))||real.find(d=>/built-in|macbook|internal/i.test(d.label))||real[0]||ins[0];
+  return pref?pref.deviceId:null;
+}
+async function pickPreferred(){
+  let ins=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="audioinput");
+  if(ins.length && !ins[0].label){ try{ const t=await navigator.mediaDevices.getUserMedia({audio:true}); t.getTracks().forEach(x=>x.stop()); }catch(e){}
+    ins=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="audioinput"); }
+  const real=ins.filter(d=>!isVirtual(d.label));
+  const pref=real.find(d=>/emeet/i.test(d.label))||real.find(d=>/built-in|macbook|internal/i.test(d.label))||real[0]||ins[0];
+  return pref?pref.deviceId:null;
 }
 async function startMic(){
   const base={echoCancellation:true,noiseSuppression:true,autoGainControl:true};
@@ -305,8 +312,14 @@ async function startMic(){
 let checkStream=null, checkRaf=null, checkCtx=null;
 async function refreshDevices(){
   try{ const ds=await navigator.mediaDevices.enumerateDevices(); const sel=$("micDevice"); const cur=sel.value;
-    sel.innerHTML='<option value="">Auto (skip virtual devices)</option>';
-    ds.filter(d=>d.kind==="audioinput").forEach((d,i)=>{ const o=document.createElement("option"); o.value=d.deviceId; o.textContent=(d.label||("Microphone "+(i+1)))+(isVirtual(d.label)?"  \u2014 virtual, avoid":""); sel.appendChild(o); });
+    const ins=ds.filter(d=>d.kind==="audioinput");
+    const real=ins.filter(d=>!isVirtual(d.label));
+    const list=real.length?real:ins;
+    const cur0=sel.value;
+    sel.innerHTML="";
+    if(!list.length){ const o=document.createElement("option"); o.value=""; o.textContent="Detecting microphone..."; sel.appendChild(o); return; }
+    list.forEach((d,i)=>{ const o=document.createElement("option"); o.value=d.deviceId; o.textContent=d.label||("Microphone "+(i+1)); sel.appendChild(o); });
+    sel.value=cur0;
     sel.value=cur;
   }catch(e){}
 }
@@ -466,13 +479,16 @@ async function generateNotes(){
   }catch(e){ $("summary").textContent="Could not reach the API to write notes. Transcript and nudges are still ready to download."; }
 }
 $("micCheck").onclick=micCheck;
-async function initMic(){
-  try{ const s0=await navigator.mediaDevices.getUserMedia({audio:true}); s0.getTracks().forEach(t=>t.stop()); }catch(e){ await refreshDevices(); return; }
+async function refreshAndSelect(){
   await refreshDevices();
-  try{ const id=await resolveMicId(); if(id){ $("micDevice").value=id; store.save(); } }catch(e){}
+  try{ const id=await pickPreferred(); if(id){ $("micDevice").value=id; store.save(); } }catch(e){}
+}
+async function initMic(){
+  try{ const s0=await navigator.mediaDevices.getUserMedia({audio:true}); s0.getTracks().forEach(t=>t.stop()); }catch(e){}
+  await refreshAndSelect();
 }
 initMic();
-navigator.mediaDevices.addEventListener("devicechange", refreshDevices);
+navigator.mediaDevices.addEventListener("devicechange", refreshAndSelect);
 window.addEventListener("beforeunload",()=>{ if(running)stop(); });
 </script>
 </body>
