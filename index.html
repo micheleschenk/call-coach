@@ -85,7 +85,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v19 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v20 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -128,6 +128,10 @@
         <textarea id="objectives" placeholder="e.g. Autowash weekly sync. Confirm M3 hardware prep timeline and the MoveIt Pro upgrade window. Watch for new scope or date asks from Dennis."></textarea></label>
       <label class="field"><span>Who is on the call? (names, optional — used to attribute the notes)</span>
         <input type="text" id="attendees" placeholder="e.g. Dennis (Autowash), Sarah (ops), and me" /></label>
+      <label class="field"><span>Coaching focus: what you want to get better at as a PM</span>
+        <textarea id="focus" style="min-height:92px;">Hold the line on scope and change control: catch scope creep or anything that expands the agreement, and prompt me to flag it for change control instead of absorbing it.
+Executive presence: keep me concise and confident, cut hedging and over-explaining.
+Surface risks early: prompt me to name risks out loud rather than quietly taking them on.</textarea></label>
       <div class="field"><span>Watch for</span>
         <div class="watch" id="watch">
           <label class="chk"><input type="checkbox" value="risk" checked /> Risks to log (RICDA)</label>
@@ -177,14 +181,14 @@ function log(m){ const t=new Date().toLocaleTimeString([], {hour12:false}); logE
 const store = {
   load(){ try{ const c=JSON.parse(localStorage.getItem("callcoach")||"{}");
     if(c.apiKey)$("apiKey").value=c.apiKey; if(c.model)$("model").value=c.model;
-    if(c.objectives)$("objectives").value=c.objectives; if(c.attendees)$("attendees").value=c.attendees;
+    if(c.objectives)$("objectives").value=c.objectives; if(c.attendees)$("attendees").value=c.attendees; if(c.focus)$("focus").value=c.focus;
     if(c.driveUrl)$("driveUrl").value=c.driveUrl; if(c.driveFolder)$("driveFolder").value=c.driveFolder;
     if(typeof c.custOn==="boolean")$("custOn").checked=c.custOn; if(typeof c.localOnly==="boolean")$("localOnly").checked=c.localOnly; if(typeof c.suggestOn==="boolean")$("suggestOn").checked=c.suggestOn; if(typeof c.calSync==="boolean")$("calSync").checked=c.calSync;
     if(Array.isArray(c.watch))document.querySelectorAll('#watch input').forEach(i=>i.checked=c.watch.includes(i.value));
   }catch(e){} },
   save(){ localStorage.setItem("callcoach", JSON.stringify({
     apiKey:$("apiKey").value.trim(), model:$("model").value,
-    objectives:$("objectives").value, attendees:$("attendees").value, driveUrl:$("driveUrl").value.trim(), driveFolder:$("driveFolder").value.trim(), custOn:$("custOn").checked, localOnly:$("localOnly").checked, suggestOn:$("suggestOn").checked, calSync:$("calSync").checked,
+    objectives:$("objectives").value, attendees:$("attendees").value, focus:$("focus").value, driveUrl:$("driveUrl").value.trim(), driveFolder:$("driveFolder").value.trim(), custOn:$("custOn").checked, localOnly:$("localOnly").checked, suggestOn:$("suggestOn").checked, calSync:$("calSync").checked,
     watch:[...document.querySelectorAll('#watch input:checked')].map(i=>i.value) })); }
 };
 store.load();
@@ -192,6 +196,7 @@ document.querySelector(".wrap").addEventListener("change", store.save);
 $("apiKey").addEventListener("input", store.save);
 $("objectives").addEventListener("input", store.save);
 $("attendees").addEventListener("input", store.save);
+$("focus").addEventListener("input", store.save);
 $("driveUrl").addEventListener("input", store.save);
 $("driveFolder").addEventListener("input", store.save);
 
@@ -368,7 +373,7 @@ function buildSystemPrompt(){
   const suggestOn=$("suggestOn").checked;
   const suggestBlock=suggestOn ? '\n\nProactive coaching: when there is a clear opening, also offer ONE high-value move the PM could make right now \u2014 a sharp question to ask, a clarifying question, or a comment that surfaces a hidden risk, deepens discovery, or adds expertise. Use type "suggest" and phrase it as the exact words the PM could say, for example: "Ask: what breaks if the vendor slips two weeks?" Keep it under 16 words. Only when it genuinely adds value; never filler to fill silence.' : '';
   const cap=suggestOn ? '- Return at most 2 items per check: at most one watchdog nudge AND at most one "suggest". Fewer is better.' : '- At most 1 nudge per check, under 14 words, phrased as a direct prompt to the PM.';
-  return 'You are a live coach for a technical project manager (PM) at a robotics company on a customer call. Transcript lines are labelled "You" (the PM) and "Customer" (everyone on the other side).\n\nCall context from the PM:\n'+($("objectives").value.trim()||"(none given)")+(who?('\nPeople on the call: '+who):'')+'\n\nWatch specifically for:\n'+(watching||"- anything the PM should act on")+suggestBlock+'\n\nHard rules (follow strictly):\n- Default to restraint. Silence is fine; do not feel obliged to speak every check.\n- BEFORE nudging that an action item lacks an owner or a date, re-read the transcript. If an owner or date was already stated anywhere, do NOT nudge. Never nudge about something already resolved.\n- Do not restate what was just agreed. Never repeat or rephrase anything you already said earlier in this call.\n'+cap+'\n- Respond with ONLY a JSON array, no prose, no code fences. Each item: {"type": "risk"|"commitment"|"action"|"nextsteps"|"suggest"|"general", "text": "..."}.\n- If nothing is clearly worth saying, respond with [].';
+  return 'You are a live coach for a technical project manager (PM) at a robotics company on a customer call. Transcript lines are labelled "You" (the PM) and "Customer" (everyone on the other side).\n\nCall context from the PM:\n'+($("objectives").value.trim()||"(none given)")+(who?('\nPeople on the call: '+who):'')+'\n\nWatch specifically for:\n'+(watching||"- anything the PM should act on")+suggestBlock+(($("focus").value.trim())?('\n\nThe PM's coaching focus (bias EVERY nudge and suggestion toward building these habits; prefer moments that relate to these):\n'+$("focus").value.trim()):'')+'\n\nHard rules (follow strictly):\n- Default to restraint. Silence is fine; do not feel obliged to speak every check.\n- BEFORE nudging that an action item lacks an owner or a date, re-read the transcript. If an owner or date was already stated anywhere, do NOT nudge. Never nudge about something already resolved.\n- Do not restate what was just agreed. Never repeat or rephrase anything you already said earlier in this call.\n'+cap+'\n- Respond with ONLY a JSON array, no prose, no code fences. Each item: {"type": "risk"|"commitment"|"action"|"nextsteps"|"suggest"|"general", "text": "..."}.\n- If nothing is clearly worth saying, respond with [].';
 }
 
 async function runCoach(manual=false){
@@ -514,7 +519,7 @@ async function generateNotes(){
   }
   $("summary").textContent="Writing your notes...";
   const who=$("attendees").value.trim();
-  const sys='You write concise, accurate post-call notes for a technical project manager. Use ONLY what is in the transcript; never invent. '+(who?('People on the call: '+who+'. Attribute decisions and action items to the right person by name when the transcript makes it clear; otherwise say "Customer" or "You". '):'')+'Output GitHub markdown with these sections in order: ## Summary (3 to 5 sentences), ## Decisions, ## Action items (one per line as "- [owner or TBD] task \u2014 due [date or TBD]", only include a date or owner if actually stated), ## Risks / RICDA, ## Open questions, ## Next steps, and finally ## Recommendations for similar calls (forward-looking coaching for the PM: what to prepare in advance, sharp questions to ask up front, pitfalls or missed openings from this call to avoid next time, and what tends to move calls like this forward). Base recommendations only on how THIS call actually went. Keep it tight. If a section has nothing, write "- none".';
+  const sys='You write concise, accurate post-call notes for a technical project manager. Use ONLY what is in the transcript; never invent. '+(($("focus").value.trim())?('The PM is actively working to improve on: '+$("focus").value.trim()+'. '):'')+(who?('People on the call: '+who+'. Attribute decisions and action items to the right person by name when the transcript makes it clear; otherwise say "Customer" or "You". '):'')+'Output GitHub markdown with these sections in order: ## Summary (3 to 5 sentences), ## Decisions, ## Action items (one per line as "- [owner or TBD] task \u2014 due [date or TBD]", only include a date or owner if actually stated), ## Risks / RICDA, ## Open questions, ## Next steps, and finally ## Recommendations for similar calls (forward-looking coaching for the PM: what to prepare in advance, sharp questions to ask up front, pitfalls or missed openings from this call to avoid next time, and what tends to move calls like this forward, PLUS honest specific feedback on how the PM did on their stated focus areas this call and how to sharpen them next time). Base recommendations only on how THIS call actually went. Keep it tight. If a section has nothing, write "- none".';
   try{
     const res=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
       headers:{ "content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
