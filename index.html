@@ -84,7 +84,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v12 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v13 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -124,6 +124,8 @@
       </div>
       <label class="field"><span>What is this call about? (agenda, goals, customer name)</span>
         <textarea id="objectives" placeholder="e.g. Autowash weekly sync. Confirm M3 hardware prep timeline and the MoveIt Pro upgrade window. Watch for new scope or date asks from Dennis."></textarea></label>
+      <label class="field"><span>Who is on the call? (names, optional — used to attribute the notes)</span>
+        <input type="text" id="attendees" placeholder="e.g. Dennis (Autowash), Sarah (ops), and me" /></label>
       <div class="field"><span>Watch for</span>
         <div class="watch" id="watch">
           <label class="chk"><input type="checkbox" value="risk" checked /> Risks to log (RICDA)</label>
@@ -145,6 +147,10 @@
     <section class="card"><h2>Transcript</h2>
       <div id="transcript"><div class="empty">Listening starts when you press Start call.</div></div></section>
   </div>
+  <section class="card" id="notesCard" style="margin-top:18px; display:none;">
+    <h2>Meeting notes <button class="btn" id="downloadBtn" style="margin-left:auto; font-size:12px; padding:6px 12px;">Download notes</button></h2>
+    <div id="summary" style="padding:16px; white-space:pre-wrap; font-size:14px; line-height:1.65;"></div>
+  </section>
 </div>
 
 <script type="module">
@@ -161,25 +167,26 @@ function log(m){ const t=new Date().toLocaleTimeString([], {hour12:false}); logE
 const store = {
   load(){ try{ const c=JSON.parse(localStorage.getItem("callcoach")||"{}");
     if(c.apiKey)$("apiKey").value=c.apiKey; if(c.model)$("model").value=c.model;
-    if(c.objectives)$("objectives").value=c.objectives;
+    if(c.objectives)$("objectives").value=c.objectives; if(c.attendees)$("attendees").value=c.attendees;
     if(typeof c.custOn==="boolean")$("custOn").checked=c.custOn; if(typeof c.localOnly==="boolean")$("localOnly").checked=c.localOnly;
     if(Array.isArray(c.watch))document.querySelectorAll('#watch input').forEach(i=>i.checked=c.watch.includes(i.value));
   }catch(e){} },
   save(){ localStorage.setItem("callcoach", JSON.stringify({
     apiKey:$("apiKey").value.trim(), model:$("model").value,
-    objectives:$("objectives").value, custOn:$("custOn").checked, localOnly:$("localOnly").checked,
+    objectives:$("objectives").value, attendees:$("attendees").value, custOn:$("custOn").checked, localOnly:$("localOnly").checked,
     watch:[...document.querySelectorAll('#watch input:checked')].map(i=>i.value) })); }
 };
 store.load();
 document.querySelector(".wrap").addEventListener("change", store.save);
 $("apiKey").addEventListener("input", store.save);
 $("objectives").addEventListener("input", store.save);
+$("attendees").addEventListener("input", store.save);
 
 let running=false, transcriber=null, whisperLoading=null;
 let micStream=null, micCap=null, displayStream=null, custCap=null;
 let queue=[], working=false;
 const CHUNK_SEC=6, SR=16000;
-let transcript=[], lastCoachLen=0, coachTimer=null, shownNudges=[], testTimeout=null;
+let transcript=[], lastCoachLen=0, coachTimer=null, shownNudges=[], testTimeout=null, nudgeLog=[], lastNotes="";
 
 function setStatus(t){ statusEl.textContent=t; }
 function setPill(el,on){ el.classList.toggle("on",!!on); }
@@ -204,6 +211,7 @@ function addNudge(type,msg){
   div.className="nudge "+t;
   div.innerHTML='<div class="tag"></div><div class="msg"></div><div class="time"></div>';
   div.querySelector(".tag").textContent=type; div.querySelector(".msg").textContent=msg; div.querySelector(".time").textContent=timeNow();
+  nudgeLog.push({time:timeNow(), type, text:msg});
   nudgesEl.insertBefore(div,nudgesEl.firstChild);
   while(nudgesEl.children.length>8)nudgesEl.removeChild(nudgesEl.lastChild);
   nudgeCount.textContent=nudgesEl.children.length;
@@ -330,7 +338,8 @@ function buildSystemPrompt(){
     action:"action items that are floating without a clear owner",
     nextsteps:"the call approaching a close with no agreed next steps or follow-up" };
   const watching=watch.map(w=>"- "+map[w]).join("\n");
-  return 'You are a live coach listening to a customer call for a technical project manager at a robotics company. Lines are labelled "You" (the PM) and "Customer".\n\nCall context from the PM:\n'+($("objectives").value.trim()||"(none given)")+'\n\nWatch specifically for:\n'+(watching||"- anything the PM should act on")+'\n\nRules:\n- Only speak up when there is a genuinely useful, specific, in-the-moment nudge. Silence is fine.\n- Return at most 2 nudges. Each under 14 words, phrased as a direct prompt to the PM.\n- Do not summarise the call. Do not repeat a nudge you would have given a moment ago.\n- Respond with ONLY a JSON array, no prose, no code fences. Each item: {"type": one of "risk"|"commitment"|"action"|"nextsteps"|"general", "text": "..."}.\n- If there is nothing worth saying, respond with [].';
+  const who=$("attendees").value.trim();
+  return 'You are a quiet live coach for a technical project manager (PM) at a robotics company on a customer call. Transcript lines are labelled "You" (the PM) and "Customer" (everyone on the other side).\n\nCall context from the PM:\n'+($("objectives").value.trim()||"(none given)")+(who?('\nPeople on the call: '+who):'')+'\n\nWatch specifically for:\n'+(watching||"- anything the PM should act on")+'\n\nHard rules (follow strictly):\n- Default to silence. Most checks should return []. Only interrupt when it clearly helps.\n- BEFORE nudging that an action item lacks an owner or a date, re-read the transcript. If an owner or date was already stated anywhere, do NOT nudge. Never nudge about something already resolved in the conversation.\n- Do not restate what was just agreed. Do not nudge about things already handled.\n- Never repeat or rephrase a nudge you already gave earlier in this call.\n- At most 1 nudge per check, under 14 words, phrased as a direct prompt to the PM.\n- Only raise a risk/commitment/nextsteps nudge if it is genuinely unaddressed and time-sensitive.\n- Respond with ONLY a JSON array, no prose, no code fences. Each item: {"type": "risk"|"commitment"|"action"|"nextsteps"|"general", "text": "..."}.\n- If nothing is clearly worth saying, respond with [].';
 }
 
 async function runCoach(manual=false){
@@ -351,7 +360,7 @@ async function runCoach(manual=false){
     let txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
     txt=txt.replace(/^```json/i,"").replace(/```$/,"").trim();
     let arr=[]; try{ arr=JSON.parse(txt); }catch(e){ arr=[]; }
-    (Array.isArray(arr)?arr:[]).slice(0,2).forEach(n=>{ if(n&&n.text)addNudge(n.type||"general",n.text); });
+    (Array.isArray(arr)?arr:[]).slice(0,1).forEach(n=>{ if(n&&n.text)addNudge(n.type||"general",n.text); });
   }catch(e){ setStatus("Coach could not reach the API. Check your network, then press Nudge now."); }
   setPill(pillCoach,false);
 }
@@ -359,7 +368,8 @@ async function runCoach(manual=false){
 async function start(isTest=false){
   if(running)return; running=true;
   startBtn.disabled=true; testBtn.disabled=true; stopBtn.disabled=false; nudgeBtn.disabled=false;
-  transcript=[]; lastCoachLen=0; shownNudges=[]; queue=[];
+  transcript=[]; lastCoachLen=0; shownNudges=[]; queue=[]; nudgeLog=[]; lastNotes="";
+  $("notesCard").style.display="none"; $("summary").textContent="";
   transcriptEl.innerHTML=""; nudgesEl.innerHTML='<div class="empty">Listening...</div>';
   logEl.textContent=""; log(isTest?"TEST started":"call started");
   setStatus("Loading transcription model (first time only, 30 to 90s)...");
@@ -367,7 +377,7 @@ async function start(isTest=false){
   setStatus("Model ready. Allow the microphone when Chrome asks...");
   const micOk=await startMic(); log("mic "+(micOk?"on":"FAILED"));
   if($("custOn").checked){ const cOk=await startCustomer(); log("customer "+(cOk?"on":"off")); }
-  coachTimer=setInterval(()=>runCoach(false),18000);
+  coachTimer=setInterval(()=>runCoach(false),30000);
   if(isTest){
     setStatus("Test running for 20 seconds: talk out loud, and keep the shared video playing...");
     testTimeout=setTimeout(()=>{
@@ -391,8 +401,49 @@ function stop(){
 
 startBtn.onclick=()=>start(false);
 testBtn.onclick=()=>start(true);
-stopBtn.onclick=()=>{ stop(); setStatus("Stopped."); };
+stopBtn.onclick=async ()=>{ const had=transcript.length; stop(); setStatus("Call ended."); if(had) await generateNotes(); };
 nudgeBtn.onclick=()=>runCoach(true);
+
+function notesFilename(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return "call-notes-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes())+".md"; }
+function buildMarkdown(summaryText){
+  const d=new Date();
+  let md="# Call notes \u2014 "+d.toLocaleString()+"\n\n";
+  const who=$("attendees").value.trim(); if(who) md+="**On the call:** "+who+"\n\n";
+  const ctx=$("objectives").value.trim(); if(ctx) md+="**Context:** "+ctx+"\n\n";
+  if(summaryText) md+=summaryText.trim()+"\n\n";
+  md+="## Coach nudges during the call\n"+(nudgeLog.length? nudgeLog.map(n=>"- ["+n.time+"] ("+n.type+") "+n.text).join("\n") : "- none")+"\n\n";
+  md+="## Full transcript\n"+(transcript.length? transcript.map(l=>"**"+l.who+":** "+l.text).join("\n\n") : "- none")+"\n";
+  return md;
+}
+function downloadNotes(){
+  const md=buildMarkdown(lastNotes);
+  const blob=new Blob([md],{type:"text/markdown"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=notesFilename(); a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+$("downloadBtn").onclick=downloadNotes;
+
+async function generateNotes(){
+  $("notesCard").style.display="block";
+  const key=$("apiKey").value.trim();
+  const full=transcript.map(l=>l.who+": "+l.text).join("\n");
+  if($("localOnly").checked || !key){
+    $("summary").textContent="(AI summary off "+(key?"by local-only mode":"until an API key is set")+".) Transcript and nudges are ready \u2014 press Download notes.";
+    return;
+  }
+  $("summary").textContent="Writing your notes...";
+  const who=$("attendees").value.trim();
+  const sys='You write concise, accurate post-call notes for a technical project manager. Use ONLY what is in the transcript; never invent. '+(who?('People on the call: '+who+'. Attribute decisions and action items to the right person by name when the transcript makes it clear; otherwise say "Customer" or "You". '):'')+'Output GitHub markdown with these sections in order: ## Summary (3 to 5 sentences), ## Decisions, ## Action items (one per line as "- [owner or TBD] task \u2014 due [date or TBD]", only include a date or owner if actually stated), ## Risks / RICDA, ## Open questions, ## Next steps. Keep it tight. If a section has nothing, write "- none".';
+  try{
+    const res=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
+      headers:{ "content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
+      body:JSON.stringify({ model:$("model").value, max_tokens:1200, system:sys, messages:[{role:"user",content:"Transcript:\n\n"+full}] }) });
+    if(!res.ok){ const t=await res.text(); $("summary").textContent="Could not write notes ("+res.status+"). Transcript and nudges are still ready to download. "+t.slice(0,120); return; }
+    const data=await res.json();
+    lastNotes=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
+    $("summary").textContent=lastNotes||"(No summary returned.) Transcript is ready to download.";
+  }catch(e){ $("summary").textContent="Could not reach the API to write notes. Transcript and nudges are still ready to download."; }
+}
 $("micCheck").onclick=micCheck;
 async function initMic(){
   try{ const s0=await navigator.mediaDevices.getUserMedia({audio:true}); s0.getTracks().forEach(t=>t.stop()); }catch(e){ await refreshDevices(); return; }
