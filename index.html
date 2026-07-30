@@ -85,7 +85,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v24 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v25 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -97,6 +97,7 @@
     <button class="btn stop" id="stopBtn" disabled>Stop</button>
     <button class="btn" id="testBtn">Test for 20s</button>
     <button class="btn" id="nudgeBtn" disabled>Nudge now</button>
+    <button class="btn" id="notifyTest">Test alert</button>
   </div>
   <div id="status">Fill in setup below, then press Start call.</div>
   <div id="calBanner" style="display:none; margin:12px 0 0; padding:11px 14px; border:1px solid var(--accent); background:#eafaf4; border-radius:10px; font-size:14px;"></div>
@@ -498,6 +499,14 @@ startBtn.onclick=()=>start(false);
 testBtn.onclick=()=>start(true);
 stopBtn.onclick=async ()=>{ const had=transcript.length; stop(); setStatus("Call ended."); if(had){ await generateNotes(); await saveToDrive(buildMarkdown(lastNotes)); } };
 nudgeBtn.onclick=()=>runCoach(true);
+$("notifyTest").onclick=async ()=>{
+  if(!window.Notification){ setStatus("This browser does not support notifications."); return; }
+  let perm=Notification.permission;
+  if(perm!=="granted"){ try{ perm=await Notification.requestPermission(); }catch(e){} }
+  if(perm!=="granted"){ setStatus("Notifications are blocked for this site. Turn them on via the icon at the left of the address bar."); return; }
+  setStatus("Switch to another tab or app now: a test alert pops in 5 seconds.");
+  setTimeout(()=>{ try{ new Notification("Call Coach test alert", {body:"If you see this over your other windows, desktop alerts are working."}); setStatus("Test alert sent. See it? Then meeting reminders will reach you too."); }catch(e){ setStatus("Could not show the alert: "+(e.message||e)); } }, 5000);
+};
 
 function titleBase(){ let t=(($("objectives").value)||"").split(/\n|[.;]/)[0].trim(); if(t.length>60)t=t.slice(0,60).trim(); return t||"Call notes"; }
 function stampNow(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+p(d.getMinutes()); }
