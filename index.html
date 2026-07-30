@@ -85,7 +85,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v21 (hosted)</span></div>
+    <div class="logo">Call Coach<span class="dot">.</span> <span style="font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:400;">v22 (hosted)</span></div>
     <div class="pills">
       <div class="pill" id="pillMic"><span class="led"></span>You</div>
       <div class="pill warn" id="pillCust"><span class="led"></span>Customer</div>
@@ -153,6 +153,8 @@ Surface risks early: prompt me to name risks out loud rather than quietly taking
         <label class="field"><span>Drive folder name</span>
           <input type="text" id="driveFolder" placeholder="Call Coach Notes" /></label>
       </div>
+      <div class="field"><span>Scope for this call</span>
+        <div id="scopeStatus" style="padding:9px 12px; border:1px dashed var(--line); border-radius:8px; color:var(--muted); font-size:13px;">Not checked yet. It fills in when you press Start call.</div></div>
       <p class="note"><b>How to start a call:</b> join the meeting in a <b>Chrome tab</b> (Meet, or Zoom / Teams in the browser). Press <b>Start call</b>, allow the microphone, then in the share box pick <b>Chrome Tab</b>, choose the meeting tab, and tick <b>Also share tab audio</b>. Everything is transcribed on this computer; only the text transcript is sent to Claude, and only when nudges are on.</p>
     </div>
   </section>
@@ -473,18 +475,24 @@ async function pollCalendar(){
     } else { showCalBanner(null); }
   }catch(e){}
 }
+function setScopeStatus(msg, kind){ const el=$("scopeStatus"); if(!el) return; el.textContent=msg;
+  el.style.color = kind==="ok"?"var(--action)":(kind==="err"?"var(--risk)":"var(--muted)");
+  el.style.borderStyle = kind==="ok"?"solid":"dashed";
+  el.style.borderColor = kind==="ok"?"var(--accent)":(kind==="err"?"var(--risk)":"var(--line)"); }
 async function loadScopeForCall(){
   currentScope=""; currentScopeName="";
-  if(!$("scopeOn").checked){ return; }
-  const url=$("driveUrl").value.trim(); if(!url) return;
+  if(!$("scopeOn").checked){ setScopeStatus("Scope check is turned off.",""); return; }
+  const url=$("driveUrl").value.trim(); if(!url){ setScopeStatus("Add your Apps Script URL above to check scope.","err"); return; }
   const ctx=((($("objectives").value||"")+" "+($("attendees").value||"")).trim()).slice(0,1500);
-  if(!ctx) return;
+  if(!ctx){ setScopeStatus("Add a call description so I know which SOW to match.","err"); return; }
+  setScopeStatus("Checking your SOW folder...","");
   setStatus("Loading SOW scope for this call...");
   try{
-    const d=await jsonp(url+(url.includes("?")?"&":"?")+"action=scope&ctx="+encodeURIComponent(ctx), 25000);
-    if(d && d.ok && d.scope){ currentScope=d.scope; currentScopeName=d.scopeName||""; log("scope loaded: "+currentScopeName); setStatus('Scope loaded: '+currentScopeName+'. Coaching against that SOW.'); }
-    else { log("no matching SOW found in the folder for this call"); }
-  }catch(e){ log("scope load failed: "+(e.message||e)); }
+    const d=await jsonp(url+(url.includes("?")?"&":"?")+"action=scope&ctx="+encodeURIComponent(ctx), 30000);
+    if(d && d.ok && d.scope){ currentScope=d.scope; currentScopeName=d.scopeName||""; log("scope loaded: "+currentScopeName); setScopeStatus("Loaded: "+currentScopeName,"ok"); setStatus("Scope loaded. Coaching against "+currentScopeName+"."); }
+    else if(d && d.ok){ log("no matching SOW found"); setScopeStatus("No SOW in the folder matched this call. Check the call description has the customer name.","err"); }
+    else { log("scope error: "+((d&&d.error)||"unknown")); setScopeStatus("Scope check errored: "+((d&&d.error)||"unknown"),"err"); }
+  }catch(e){ log("scope load failed: "+(e.message||e)); setScopeStatus("Could not reach the SOW folder. Check the Apps Script URL and that it is redeployed.","err"); }
 }
 startBtn.onclick=()=>start(false);
 testBtn.onclick=()=>start(true);
